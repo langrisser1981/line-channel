@@ -1,0 +1,13 @@
+{
+  "name": "line-channel",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.15.0",
+    "zod": "^3.23.8"
+  }
+}
