@@ -62,7 +62,10 @@ async function handleEvent(
   if (event.type !== 'message' || event.message?.type !== 'text') return
 
   const userId = event.source?.userId ?? ''
-  if (userId !== allowedUserId) return // silent drop
+  if (userId !== allowedUserId) {
+    console.error(`[line-channel] Message from unknown userId: ${userId} (update LINE_USER_ID in .env)`)
+    return
+  }
 
   const text = event.message.text
 
