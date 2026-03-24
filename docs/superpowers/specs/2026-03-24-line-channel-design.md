@@ -28,7 +28,7 @@ A Claude Code Channel plugin that bridges LINE Messaging API with a Claude Code 
 line-channel/
 ├── src/
 │   ├── index.ts          # MCP Server: capabilities, reply tool, permission relay handler
-│   ├── line-client.ts    # LINE API wrapper: replyMessage, pushMessage, verifySignature
+│   ├── line-client.ts    # LINE API wrapper: pushMessage, verifySignature
 │   └── webhook.ts        # HTTP server: receive LINE events, produce HTTP responses, route to MCP notifications
 ├── .mcp.json             # Claude Code MCP server registration
 ├── .env.example          # Required environment variables template
@@ -41,10 +41,20 @@ line-channel/
 | File | Responsibility | Does NOT |
 |---|---|---|
 | `index.ts` | MCP Server setup, tool registration, stdio connection | Handle HTTP directly |
-| `line-client.ts` | Call LINE API (reply/push), verify X-Line-Signature | Know about MCP |
+| `line-client.ts` | Call LINE API (push only), verify X-Line-Signature | Know about MCP |
 | `webhook.ts` | Receive LINE webhook events, produce HTTP responses (200/401), gate sender, route to MCP | Call LINE API directly |
 
 `webhook.ts` owns the full HTTP request/response lifecycle. It emits MCP notifications but does not call LINE API. All LINE API calls go through `line-client.ts`.
+
+---
+
+## Why Push API Only (no Reply API)
+
+LINE's reply token is valid for approximately **30 seconds** after the user sends a message. Since Claude may take much longer to process a request, reply tokens cannot be relied upon for responses.
+
+This plugin uses **Push API exclusively** for all outbound messages (both Claude replies and permission relay prompts). Push API has no time limit, requires only `LINE_USER_ID` and `LINE_CHANNEL_ACCESS_TOKEN`, and is appropriate for a single-user personal assistant.
+
+**Free tier limit:** 500 push messages/month on LINE's free plan. Personal assistant usage typically stays well within this limit.
 
 ---
 
@@ -52,7 +62,7 @@ line-channel/
 
 | Variable | Purpose |
 |---|---|
-| `LINE_CHANNEL_ACCESS_TOKEN` | Authenticate LINE API calls (reply + push) |
+| `LINE_CHANNEL_ACCESS_TOKEN` | Authenticate LINE API calls (push) |
 | `LINE_CHANNEL_SECRET` | Verify incoming webhook signature |
 | `LINE_USER_ID` | Your LINE user ID — allowlist and push target |
 | `LINE_WEBHOOK_PORT` | Local HTTP port (default: `3000`) |
@@ -92,18 +102,20 @@ User sends LINE message
           └─ does not match (regular text)
               → mcp.notification("notifications/claude/channel")
                 content: message text
-                meta: { reply_token, user_id }
+                meta: { user_id }
               → return 200
 ```
 
 ### Outbound (Claude Code to LINE)
 
 ```
-Claude calls reply tool({ reply_token, text })
+Claude calls reply tool({ text })
   → index.ts CallToolRequestSchema handler
-  → line-client.ts replyMessage(replyToken, text)
-  → LINE Reply API → user's LINE
+  → line-client.ts pushMessage(LINE_USER_ID, text)
+  → LINE Push API → user's LINE
 ```
+
+No reply token is needed. All responses use Push API.
 
 ### Permission Relay
 
@@ -117,10 +129,6 @@ Claude Code needs tool approval (tool-use dialog opens)
   → webhook.ts classifies via PERMISSION_REPLY_RE → emits permission verdict
   → Claude Code applies verdict (local terminal dialog also stays open — first answer wins)
 ```
-
-**Key distinction:**
-- **Reply API**: respond to user messages (requires `reply_token`, valid ~1 min after user sends)
-- **Push API**: proactive messages to user (permission relay prompts; no reply_token needed, uses `LINE_USER_ID`)
 
 ---
 
@@ -137,8 +145,8 @@ capabilities: {
   tools: {},                         // enables reply tool discovery
 },
 instructions: `
-  Messages from LINE arrive as <channel source="line-channel" reply_token="..." user_id="...">.
-  To reply, call the reply tool with the reply_token from the tag and your response text.
+  Messages from LINE arrive as <channel source="line-channel" user_id="...">.
+  To reply, call the reply tool with your response text.
   This is a personal assistant — treat all messages as coming from the owner.
 `
 ```
@@ -150,17 +158,18 @@ instructions: `
 ```typescript
 {
   name: 'reply',
-  description: 'Send a reply to the LINE user',
+  description: 'Send a message to the LINE user via Push API',
   inputSchema: {
     type: 'object',
     properties: {
-      reply_token: { type: 'string', description: 'reply_token from the channel tag' },
       text: { type: 'string', description: 'Message text to send' },
     },
-    required: ['reply_token', 'text'],
+    required: ['text'],
   },
 }
 ```
+
+The push target (`LINE_USER_ID`) is fixed at server startup from the environment variable. Claude does not need to supply it.
 
 ---
 
@@ -179,23 +188,30 @@ instructions: `
 | ngrok not running at startup | Print warning + manual setup instructions; server starts normally |
 | ngrok running but no active tunnel | Print warning: "ngrok is running but no tunnel found"; server starts normally |
 | ngrok URL detection request timeout | 2-second timeout; on failure treat as "not running" |
-| LINE Reply API call fails | Log error; do not crash MCP server |
-| `reply_token` expired | Catch error; the original reply text is discarded (not retried); push "Sorry, reply timed out. Please resend your message." via Push API |
+| LINE Push API call fails | Log error; do not crash MCP server |
 | Missing env variable | Exit immediately: `Missing required env var: <NAME>` |
 | Invalid webhook signature | Return HTTP 401; log warning |
 
 ---
 
-## ngrok URL Detection
+## ngrok URL Detection and Clipboard
 
 On startup, the server queries `http://localhost:4040/api/tunnels` with a 2-second timeout:
 
-- **Tunnel found:** print the public HTTPS URL
+- **Tunnel found:** print the public HTTPS URL and copy it to the system clipboard
 - **Running but no tunnel:** print warning: "ngrok is running but no active tunnel found"
 - **Not running / timeout:** print manual setup instructions
 
+Clipboard copy uses `pbcopy` on macOS (via `Bun.spawn`). On other platforms (Linux, Windows), clipboard copy is skipped and the URL is printed only.
+
 ```
 [line-channel] Webhook port: 3000
+[line-channel] Webhook URL: https://xxxx.ngrok-free.app/webhook
+[line-channel] URL copied to clipboard. Paste into LINE Developers Console > Webhook URL
+```
+
+If clipboard copy fails or is unsupported:
+```
 [line-channel] Webhook URL: https://xxxx.ngrok-free.app/webhook
 [line-channel] Paste this URL into LINE Developers Console > Webhook URL
 ```
