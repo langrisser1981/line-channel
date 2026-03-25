@@ -129,5 +129,5 @@ bun test
 ## Notes
 
 - Replies within 30 seconds use LINE's Reply API; slower responses fall back to Push API automatically
-- Push API free tier: 500 messages/month on LINE's free plan
+- Push API free tier: 200 messages/month on LINE's free plan
 - ngrok free tier URL changes on every restart — re-paste into LINE Console each time
