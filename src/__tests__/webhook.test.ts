@@ -62,12 +62,37 @@ describe('webhook routing', () => {
   })
 
   test('returns 200 immediately before processing completes', async () => {
+    let notificationCallStarted = false
+    let notificationCallCompleted = false
+    const delayedNotificationMock = mock(async (n: unknown) => {
+      notificationCallStarted = true
+      await Bun.sleep(10) // Simulate some async work
+      notificationCallCompleted = true
+      notifications.push(n)
+      return Promise.resolve()
+    })
+    const origMcp = mockMcp as any
+    origMcp.notification = delayedNotificationMock
+
     const body = JSON.stringify({
       events: [{ type: 'message', replyToken: 'tok1', source: { userId: USER_ID }, message: { type: 'text', text: 'hi' } }],
     })
     const res = await postWebhook(body)
-    // 200 arrives before background processing — notifications may or may not be populated yet
+    // Handler returns 200 before background processing (fire-and-forget pattern).
+    // Even though processing may have started, the response comes back without waiting for it to complete.
     expect(res.status).toBe(200)
+    // Wait for background processing to actually complete
+    await Bun.sleep(50)
+    expect(notificationCallCompleted).toBe(true)
+    expect(notifications).toHaveLength(1)
+
+    // Restore original mock for other tests
+    notificationMock.mockReset()
+    notificationMock.mockImplementation((n: unknown) => {
+      notifications.push(n)
+      return Promise.resolve()
+    })
+    origMcp.notification = notificationMock
   })
 
   test('unknown sender is silently dropped (200)', async () => {
@@ -92,6 +117,7 @@ describe('webhook routing', () => {
     const n = notifications[0] as any
     expect(n.method).toBe('notifications/claude/channel')
     expect(n.params.content).toBe('hello claude')
+    expect(n.params.meta.user_id).toBe(USER_ID)
     expect(onMessageTokens).toEqual(['myToken123'])
   })
 
