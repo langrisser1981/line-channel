@@ -19,6 +19,7 @@ export function startWebhookServer(
   mcp: Pick<Server, 'notification'>,
   config: WebhookConfig,
   port: number,
+  onMessage: (replyToken: string) => void = () => {},
 ): WebhookServer {
   const server = Bun.serve({
     port,
@@ -44,20 +45,36 @@ export function startWebhookServer(
         return new Response('bad request', { status: 400 })
       }
 
-      for (const event of payload.events ?? []) {
-        await handleEvent(event, mcp, config.allowedUserId)
-      }
-
+      // Fire-and-forget: return 200 before processing events
+      processEvents(payload.events ?? [], mcp, config.allowedUserId, onMessage)
       return new Response('ok')
     },
   })
   return { stop: () => server.stop() }
 }
 
+function processEvents(
+  events: LineEvent[],
+  mcp: Pick<Server, 'notification'>,
+  allowedUserId: string,
+  onMessage: (replyToken: string) => void,
+): void {
+  ;(async () => {
+    for (const event of events) {
+      try {
+        await handleEvent(event, mcp, allowedUserId, onMessage)
+      } catch (err) {
+        console.error('[line-channel] Error processing event:', err)
+      }
+    }
+  })()
+}
+
 async function handleEvent(
   event: LineEvent,
   mcp: Pick<Server, 'notification'>,
   allowedUserId: string,
+  onMessage: (replyToken: string) => void,
 ): Promise<void> {
   if (event.type !== 'message' || event.message?.type !== 'text') return
 
@@ -81,6 +98,11 @@ async function handleEvent(
     return
   }
 
+  // Regular message: store reply token before notifying Claude
+  if (event.replyToken) {
+    onMessage(event.replyToken)
+  }
+
   await mcp.notification({
     method: 'notifications/claude/channel',
     params: {
@@ -90,9 +112,9 @@ async function handleEvent(
   })
 }
 
-// LINE event types (minimal — only what we need)
 interface LineEvent {
   type: string
+  replyToken?: string
   source?: { userId?: string }
   message?: { type: string; text: string }
 }
