@@ -5,12 +5,13 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { z } from 'zod'
 import { pushMessage, replyMessage } from './line-client'
 import { startWebhookServer } from './webhook'
+import { log } from './logger'
 
 // --- Env var validation -------------------------------------------------------
 function requireEnv(name: string): string {
   const val = process.env[name]
   if (!val) {
-    console.error(`[line-channel] Missing required env var: ${name}`)
+    log(`[line-channel] Missing required env var: ${name}`)
     process.exit(1)
   }
   return val
@@ -76,7 +77,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
       await replyMessage(ACCESS_TOKEN, pending.token, text)
       return { content: [{ type: 'text', text: 'sent' }] }
     } catch (err) {
-      console.error('[line-channel] Reply API failed, falling back to Push API:', err)
+      log(`[line-channel] Reply API failed, falling back to Push API: ${err}`)
       // Fall through to Push API
     }
   }
@@ -85,7 +86,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   try {
     await pushMessage(ACCESS_TOKEN, USER_ID, text)
   } catch (err) {
-    console.error('[line-channel] Push API error:', err)
+    log(`[line-channel] Push API error: ${err}`)
   }
   return { content: [{ type: 'text', text: 'sent' }] }
 })
@@ -111,7 +112,7 @@ mcp.setNotificationHandler(PermissionRequestSchema, async ({ params }) => {
   try {
     await pushMessage(ACCESS_TOKEN, USER_ID, message)
   } catch (err) {
-    console.error('[line-channel] Failed to push permission prompt:', err)
+    log(`[line-channel] Failed to push permission prompt: ${err}`)
   }
 })
 
@@ -127,7 +128,7 @@ await detectNgrok(PORT)
 
 async function detectNgrok(port: number): Promise<void> {
   const prefix = '[line-channel]'
-  console.error(`${prefix} Webhook port: ${port}`)
+  log(`${prefix} Webhook port: ${port}`)
 
   try {
     const res = await fetch('http://localhost:4040/api/tunnels', { signal: AbortSignal.timeout(2000) })
@@ -136,13 +137,13 @@ async function detectNgrok(port: number): Promise<void> {
     const data = await res.json() as { tunnels?: { public_url: string }[] }
     const tunnel = data.tunnels?.find((t) => t.public_url.startsWith('https://'))
     if (!tunnel) {
-      console.error(`${prefix} ngrok is running but no active tunnel found`)
+      log(`${prefix} ngrok is running but no active tunnel found`)
       printManualInstructions(prefix, port)
       return
     }
 
     const webhookUrl = `${tunnel.public_url}/webhook`
-    console.error(`${prefix} Webhook URL: ${webhookUrl}`)
+    log(`${prefix} Webhook URL: ${webhookUrl}`)
     await copyToClipboard(webhookUrl, prefix)
   } catch {
     printManualInstructions(prefix, port)
@@ -151,7 +152,7 @@ async function detectNgrok(port: number): Promise<void> {
 
 async function copyToClipboard(text: string, prefix: string): Promise<void> {
   if (process.platform !== 'darwin') {
-    console.error(`${prefix} Paste this URL into LINE Developers Console > Webhook URL`)
+    log(`${prefix} Paste this URL into LINE Developers Console > Webhook URL`)
     return
   }
   try {
@@ -159,14 +160,14 @@ async function copyToClipboard(text: string, prefix: string): Promise<void> {
     proc.stdin.write(text)
     proc.stdin.end()
     await proc.exited
-    console.error(`${prefix} URL copied to clipboard. Paste into LINE Developers Console > Webhook URL`)
+    log(`${prefix} URL copied to clipboard. Paste into LINE Developers Console > Webhook URL`)
   } catch {
-    console.error(`${prefix} Paste this URL into LINE Developers Console > Webhook URL`)
+    log(`${prefix} Paste this URL into LINE Developers Console > Webhook URL`)
   }
 }
 
 function printManualInstructions(prefix: string, port: number): void {
-  console.error(`${prefix} ngrok not detected. Start it with:`)
-  console.error(`${prefix}   ngrok http ${port}`)
-  console.error(`${prefix} Then paste the HTTPS URL + /webhook into LINE Developers Console`)
+  log(`${prefix} ngrok not detected. Start it with:`)
+  log(`${prefix}   ngrok http ${port}`)
+  log(`${prefix} Then paste the HTTPS URL + /webhook into LINE Developers Console`)
 }

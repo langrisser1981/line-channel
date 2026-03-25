@@ -79,6 +79,23 @@ Reply: yes abcde  or  no abcde
 
 Reply with `yes abcde` or `no abcde` to approve or deny. The local terminal dialog also stays open — whichever answer arrives first is applied.
 
+## Viewing logs
+
+All output is written to `~/.claude/logs/line-channel.log` with timestamps, and also to stderr (visible in `--mcp-debug` mode).
+
+```bash
+# Follow live
+tail -f ~/.claude/logs/line-channel.log
+
+# Show last 50 lines
+tail -50 ~/.claude/logs/line-channel.log
+```
+
+The unknown-userId message is how you discover your `LINE_USER_ID`:
+```
+2026-03-25T06:41:01Z [line-channel] Message from unknown userId: Uxxxxxxxxxx (update LINE_USER_ID in .env)
+```
+
 ## Running tests
 
 ```bash

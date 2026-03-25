@@ -1,5 +1,6 @@
 import { verifySignature } from './line-client'
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { log } from './logger'
 
 // Canonical regex for permission verdict replies.
 // Accepts: "yes abcde", "y abcde", "no abcde", "n abcde"
@@ -34,7 +35,7 @@ export function startWebhookServer(
       const signature = req.headers.get('x-line-signature') ?? ''
 
       if (!verifySignature(body, signature, config.channelSecret)) {
-        console.warn('[line-channel] Invalid signature — rejected')
+        log('[line-channel] Invalid signature — rejected')
         return new Response('unauthorized', { status: 401 })
       }
 
@@ -64,7 +65,7 @@ function processEvents(
       try {
         await handleEvent(event, mcp, allowedUserId, onMessage)
       } catch (err) {
-        console.error('[line-channel] Error processing event:', err)
+        log(`[line-channel] Error processing event: ${err}`)
       }
     }
   })()
@@ -80,7 +81,7 @@ async function handleEvent(
 
   const userId = event.source?.userId ?? ''
   if (userId !== allowedUserId) {
-    console.error(`[line-channel] Message from unknown userId: ${userId} (update LINE_USER_ID in .env)`)
+    log(`[line-channel] Message from unknown userId: ${userId} (update LINE_USER_ID in .env)`)
     return
   }
 
