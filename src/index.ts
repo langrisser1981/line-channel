@@ -3,7 +3,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { pushMessage } from './line-client'
+import { pushMessage, replyMessage } from './line-client'
 import { startWebhookServer } from './webhook'
 
 // --- Env var validation -------------------------------------------------------
@@ -20,6 +20,10 @@ const ACCESS_TOKEN = requireEnv('LINE_CHANNEL_ACCESS_TOKEN')
 const CHANNEL_SECRET = requireEnv('LINE_CHANNEL_SECRET')
 const USER_ID = requireEnv('LINE_USER_ID')
 const PORT = parseInt(process.env.LINE_WEBHOOK_PORT ?? '3000', 10)
+
+// Tracks the replyToken from the most recent incoming LINE message.
+// Consumed by the reply tool to decide between Reply API and Push API.
+let pendingReply: { token: string; at: number } | null = null
 
 // --- MCP Server ---------------------------------------------------------------
 const mcp = new Server(
@@ -45,7 +49,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: 'reply',
-      description: 'Send a message to the LINE user via Push API',
+      description: 'Send a message to the LINE user via Reply API or Push API depending on response time',
       inputSchema: {
         type: 'object',
         properties: {
@@ -62,6 +66,22 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     throw new Error(`Unknown tool: ${req.params.name}`)
   }
   const { text } = req.params.arguments as { text: string }
+
+  const pending = pendingReply
+  pendingReply = null // consume immediately
+
+  if (pending && Date.now() - pending.at < 27_000) {
+    // Fast response: use Reply API
+    try {
+      await replyMessage(ACCESS_TOKEN, pending.token, text)
+      return { content: [{ type: 'text', text: 'sent' }] }
+    } catch (err) {
+      console.error('[line-channel] Reply API failed, falling back to Push API:', err)
+      // Fall through to Push API
+    }
+  }
+
+  // Slow response or Reply API failure: use Push API
   try {
     await pushMessage(ACCESS_TOKEN, USER_ID, text)
   } catch (err) {
@@ -97,7 +117,12 @@ mcp.setNotificationHandler(PermissionRequestSchema, async ({ params }) => {
 
 // --- startup ------------------------------------------------------------------
 await mcp.connect(new StdioServerTransport())
-startWebhookServer(mcp, { channelSecret: CHANNEL_SECRET, allowedUserId: USER_ID }, PORT)
+startWebhookServer(
+  mcp,
+  { channelSecret: CHANNEL_SECRET, allowedUserId: USER_ID },
+  PORT,
+  (token) => { pendingReply = { token, at: Date.now() } },
+)
 await detectNgrok(PORT)
 
 async function detectNgrok(port: number): Promise<void> {
