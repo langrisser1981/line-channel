@@ -29,8 +29,16 @@ cp .env.example .env
 |---|---|
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE Developers Console > Channel > Messaging API > Channel access token |
 | `LINE_CHANNEL_SECRET` | LINE Developers Console > Channel > Basic settings > Channel secret |
-| `LINE_USER_ID` | LINE Developers Console > Channel > Messaging API > Your user ID |
+| `LINE_USER_ID` | See step below — start the server with a placeholder, send a message, read it from the log |
 | `LINE_WEBHOOK_PORT` | Local port (default: 3000) |
+
+**Finding your `LINE_USER_ID`:** Set it to any placeholder (e.g. `placeholder`) first, then complete the setup below. After sending your first message, the server log will print:
+
+```
+[line-channel] Message from unknown userId: Uxxxxxxxxxx (update LINE_USER_ID in .env)
+```
+
+Copy that ID into `.env` and restart.
 
 ### 3. Start ngrok
 
