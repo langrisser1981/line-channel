@@ -3,7 +3,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { pushMessage, replyMessage } from './line-client'
+import { pushMessage, replyMessage, getMessageQuota, getMessageQuotaConsumption } from './line-client'
 import { startWebhookServer } from './webhook'
 import { log } from './logger'
 
@@ -59,10 +59,33 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['text'],
       },
     },
+    {
+      name: 'get_quota',
+      description: 'Get LINE push message quota limit and current month consumption',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
   ],
 }))
 
 mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
+  if (req.params.name === 'get_quota') {
+    const [quota, consumption] = await Promise.all([
+      getMessageQuota(ACCESS_TOKEN),
+      getMessageQuotaConsumption(ACCESS_TOKEN),
+    ])
+    const result = {
+      limit: quota.value,
+      type: quota.type,
+      totalUsage: consumption.totalUsage,
+      remaining: quota.value - consumption.totalUsage,
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+  }
+
   if (req.params.name !== 'reply') {
     throw new Error(`Unknown tool: ${req.params.name}`)
   }

@@ -79,6 +79,30 @@ Reply: yes abcde  or  no abcde
 
 Reply with `yes abcde` or `no abcde` to approve or deny. The local terminal dialog also stays open — whichever answer arrives first is applied.
 
+## Available MCP Tools
+
+| Tool | Description |
+|---|---|
+| `reply` | Send a message to the LINE user (Reply API or Push API depending on response time) |
+| `get_quota` | Query current month's push message quota and consumption |
+
+### Checking push message quota
+
+Ask Claude in natural language — for example: "查推播用量" or "check LINE quota".
+
+Claude calls `get_quota` which queries two LINE API endpoints and returns:
+
+```json
+{
+  "limit": 200,
+  "type": "limited",
+  "totalUsage": 43,
+  "remaining": 157
+}
+```
+
+> **Note:** Only push/broadcast/multicast messages count toward the quota. Reply API messages are free and not counted.
+
 ## Viewing logs
 
 All output is written to `~/.claude/logs/line-channel.log` with timestamps, and also to stderr (visible in `--mcp-debug` mode).

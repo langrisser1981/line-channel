@@ -36,6 +36,33 @@ export async function pushMessage(
   }
 }
 
+export async function getMessageQuota(accessToken: string): Promise<{
+  type: string
+  value: number
+}> {
+  const res = await fetch('https://api.line.me/v2/bot/message/quota', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(`LINE Quota API error ${res.status}: ${detail}`)
+  }
+  return res.json()
+}
+
+export async function getMessageQuotaConsumption(accessToken: string): Promise<{
+  totalUsage: number
+}> {
+  const res = await fetch('https://api.line.me/v2/bot/message/quota/consumption', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(`LINE Quota Consumption API error ${res.status}: ${detail}`)
+  }
+  return res.json()
+}
+
 export async function replyMessage(
   accessToken: string,
   replyToken: string,
